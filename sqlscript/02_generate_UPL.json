@@ -1,0 +1,17 @@
+{
+	"name": "02_generate_UPL",
+	"properties": {
+		"content": {
+			"query": "CREATE PROCEDURE [dbo].[sp_GenerateUPL]\n    @ContainerName NVARCHAR(100),\n    @CYDate NVARCHAR(10),\n    @PYDate NVARCHAR(10)\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    IF OBJECT_ID('[dbo].['+@ContainerName+'_UPL_'+@CYDate+']', 'U') IS NOT NULL\n        DROP TABLE [dbo].['+@ContainerName+'_UPL_'+@CYDate+'];\n\n    SELECT  \n        '31/12/2024' AS [Ref_Date],\n        [acc_id],\n        [product],\n        [var_curr],\n        [balance],\n        [num_client],\n        [interest]\n    INTO [dbo].['+@ContainerName+'_UPL_'+@CYDate+']\n    FROM [dbo].[Balance_'+@CYDate+'];\n\n\n    -- Drop [Creation_UPL_202312] if exists\n    IF OBJECT_ID('[dbo].['+@ContainerName+'_UPL_'+@PYDate+']', 'U') IS NOT NULL\n        DROP TABLE [dbo].['+@ContainerName+'_UPL_'+@PYDate+'];\n\n    -- Create [Creation_UPL_202312]\n    SELECT\n        '31/12/2023' AS [Ref_Date],\n        [acc_id],\n        [product],\n        [balance],\n        [interest]\n    INTO [dbo].['+@ContainerName+'_UPL_'+@PYDate+']\n    FROM [dbo].[Balance_'+@PYDate+'];\n \nEND;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "sourabhdb",
+				"poolName": "sourabhdb"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

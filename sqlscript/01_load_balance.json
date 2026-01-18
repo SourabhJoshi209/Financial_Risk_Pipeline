@@ -1,0 +1,17 @@
+{
+	"name": "01_load_balance",
+	"properties": {
+		"content": {
+			"query": "-- drop PROCEDURE [dbo].[sp_LoadBalance]\nCREATE PROCEDURE [dbo].[sp_LoadBalance]\n    @ContainerName NVARCHAR(100),\n    @ServerName NVARCHAR(100),\n    @Location NVARCHAR(500),\n    @CYDate NVARCHAR(10),\n    @StorageAccountName NVARCHAR(300)\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Create external file format if not exists\n    IF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'SynapseDelimitedTextFormat')\n    BEGIN\n        EXEC('CREATE EXTERNAL FILE FORMAT [SynapseDelimitedTextFormat]\n              WITH (FORMAT_TYPE = DELIMITEDTEXT,\n                    FORMAT_OPTIONS (\n                        FIELD_TERMINATOR = '','',\n                        FIRST_ROW = 2,\n                        USE_TYPE_DEFAULT = FALSE\n                    ))');\n    END\n\n    -- Create external data source if not exists\n    IF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = 'creation_' + @ServerName)\n    BEGIN\n        DECLARE @DynamicDataSource NVARCHAR(500) = '\n        CREATE EXTERNAL DATA SOURCE [creation_' + @ServerName + ']\n        WITH (\n            LOCATION = ''' + @Location + '''\n        );';\n        EXEC(@DynamicDataSource);\n    END\n\n    -- Prepare object name variables\n    DECLARE @TableName NVARCHAR(128) = 'Balance_' + @CYDate;\n    DECLARE @QuotedTableName NVARCHAR(258) = QUOTENAME(@TableName);\n\n    -- Drop table if exists\n    IF OBJECT_ID(@QuotedTableName, 'U') IS NOT NULL\n    BEGIN\n        EXEC('DROP TABLE ' + @QuotedTableName);\n    END\n\n    -- Create table\n    DECLARE @CreateTableSQL NVARCHAR(MAX) = '\n    CREATE TABLE ' + @QuotedTableName + ' (\n        [acc_id] NVARCHAR(4000),\n        [product] NVARCHAR(4000),\n        [balance] NVARCHAR(4000),\n        [interest] NVARCHAR(4000)\n    );';\n\n    EXEC(@CreateTableSQL);\n\n    -- Load data into table\n    DECLARE @CopySQL NVARCHAR(MAX) = '\n    COPY INTO ' + @QuotedTableName + '\n    FROM ''https://' + @StorageAccountName + '/' + @ContainerName + '/' + @CYDate + '/''\n    WITH (\n        FILE_TYPE = ''CSV'',\n        MAXERRORS = 0,\n        FIELDTERMINATOR = '','',\n        FIRSTROW = 2\n    );';\n\n    EXEC(@CopySQL);\n\n    -- Return top 100 rows\n    DECLARE @SelectSQL NVARCHAR(MAX) = '\n    SELECT TOP 100 * FROM ' + @QuotedTableName + ';';\n\n    EXEC(@SelectSQL);\nEND;\n\n\n\nEXEC [dbo].[sp_LoadBalance]\n    @ContainerName = 'creations',\n    @ServerName = 'synapsesourabh.dfs.core.windows.net',\n    @Location = 'abfss://creations@synapsesourabh.dfs.core.windows.net',\n    @CYDate = '202412',\n    @StorageAccountName = 'sourabhdatalake.blob.core.windows.net';\n\n\n",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "sourabhdb",
+				"poolName": "sourabhdb"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

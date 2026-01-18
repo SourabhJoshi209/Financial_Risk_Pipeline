@@ -1,0 +1,17 @@
+{
+	"name": "06_calculate_risk",
+	"properties": {
+		"content": {
+			"query": "CREATE PROCEDURE [dbo].[sp_CalculateRiskScore]\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Add RiskScore column if not exists\n    IF NOT EXISTS (\n        SELECT 1 FROM sys.columns \n        WHERE object_id = OBJECT_ID('[dbo].[Merged_Balance]') \n          AND name = 'RiskScore'\n    )\n    BEGIN\n        ALTER TABLE [dbo].[Merged_Balance]\n        ADD [RiskScore] INT NULL;\n    END\n\n    -- Update RiskScore based on balance and interest\n    UPDATE [dbo].[Merged_Balance]\n    SET [RiskScore] = \n        CASE\n            WHEN CAST([balance] AS FLOAT) >= 100000 THEN 5\n            WHEN CAST([balance] AS FLOAT) BETWEEN 50000 AND 99999 THEN 4\n            WHEN CAST([balance] AS FLOAT) BETWEEN 10000 AND 49999 THEN 3\n            ELSE 1\n        END\n        + \n        CASE\n            WHEN CAST([interest] AS FLOAT) > 0.05 THEN 2\n            ELSE 1\n        END;\n\n    PRINT 'Risk scores calculated.';\nEND;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "sourabhdb",
+				"poolName": "sourabhdb"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

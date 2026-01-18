@@ -1,0 +1,17 @@
+{
+	"name": "05_check_anomalies",
+	"properties": {
+		"content": {
+			"query": "CREATE PROCEDURE [dbo].[sp_CheckForAnomalies]\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Check for negative balances\n    SELECT * FROM [dbo].[Merged_Balance]\n    WHERE CAST([balance] AS FLOAT) < 0;\n\n    -- Check for missing account IDs\n    SELECT * FROM [dbo].[Merged_Balance]\n    WHERE [acc_id] IS NULL OR LTRIM(RTRIM([acc_id])) = '';\n\n\n    PRINT 'Anomaly checks completed.';\nEND;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "sourabhdb",
+				"poolName": "sourabhdb"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

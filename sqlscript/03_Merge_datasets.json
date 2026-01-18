@@ -1,0 +1,17 @@
+{
+	"name": "03_Merge_datasets",
+	"properties": {
+		"content": {
+			"query": "CREATE PROCEDURE [dbo].[sp_MergeBalanceDatasets]\n    @CYDate NVARCHAR(10),\n    @PYDate NVARCHAR(10)\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Drop if exists\n    IF OBJECT_ID('[dbo].[Merged_Balance]', 'U') IS NOT NULL\n        DROP TABLE [dbo].[Merged_Balance];\n\n    -- Create merged dataset with source year info\n    SELECT\n        @CYDate AS [Year],\n        [acc_id],\n        [product],\n        [balance],\n        [interest]\n    INTO [dbo].[Merged_Balance]\n    FROM [dbo].[Balance_'+@CYDate+']\n\n    UNION ALL\n\n    SELECT\n        @PYDate AS [Year],\n        [acc_id],\n        [product],\n        [balance],\n        [interest]\n    FROM [dbo].[Balance_'+@PYDate+'];\n\n    PRINT 'Datasets merged successfully.';\nEND;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "sourabhdb",
+				"poolName": "sourabhdb"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}

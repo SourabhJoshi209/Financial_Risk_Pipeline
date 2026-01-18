@@ -1,0 +1,17 @@
+{
+	"name": "04_stratification",
+	"properties": {
+		"content": {
+			"query": "CREATE PROCEDURE [dbo].[sp_StratifyByBalance]\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Create stratification table\n    IF OBJECT_ID('[dbo].[Balance_Strata]', 'U') IS NOT NULL\n        DROP TABLE [dbo].[Balance_Strata];\n\n    SELECT\n        [acc_id],\n        [product],\n        [balance],\n        CASE\n            WHEN CAST([balance] AS FLOAT) >= 100000 THEN 'High'\n            WHEN CAST([balance] AS FLOAT) BETWEEN 50000 AND 99999 THEN 'Medium'\n            WHEN CAST([balance] AS FLOAT) BETWEEN 10000 AND 49999 THEN 'Low'\n            ELSE 'Very Low'\n        END AS [Risk_Segment]\n    INTO [dbo].[Balance_Strata]\n    FROM [dbo].[Merged_Balance];\n\n    PRINT 'Balance stratification completed.';\nEND;",
+			"metadata": {
+				"language": "sql"
+			},
+			"currentConnection": {
+				"databaseName": "sourabhdb",
+				"poolName": "sourabhdb"
+			},
+			"resultLimit": 5000
+		},
+		"type": "SqlQuery"
+	}
+}
