@@ -3,7 +3,7 @@
 	"type": "Microsoft.Synapse/workspaces/linkedservices",
 	"properties": {
 		"typeProperties": {
-			"url": "https://sourabhdatalake.dfs.core.windows.net"
+			"url": "https://sourabhsdatalake.dfs.core.windows.net"
 		},
 		"type": "AzureBlobFS",
 		"connectVia": {
