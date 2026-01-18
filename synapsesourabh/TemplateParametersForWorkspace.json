@@ -9,7 +9,7 @@
 			"value": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:synapsesourabh.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
 		},
 		"synapsesourabh-WorkspaceDefaultStorage_properties_typeProperties_url": {
-			"value": "https://sourabhdatalake.dfs.core.windows.net"
+			"value": "https://sourabhsdatalake.dfs.core.windows.net"
 		}
 	}
 }
