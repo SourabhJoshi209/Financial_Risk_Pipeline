@@ -1,0 +1,239 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"type": "string",
+			"metadata": "Workspace name",
+			"defaultValue": "synapsesourabh"
+		},
+		"synapsesourabh-WorkspaceDefaultSqlServer_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'synapsesourabh-WorkspaceDefaultSqlServer'",
+			"defaultValue": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:synapsesourabh.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"synapsesourabh-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://sourabhdatalake.dfs.core.windows.net"
+		}
+	},
+	"variables": {
+		"workspaceId": "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('workspaceName'), '/synapsesourabh-WorkspaceDefaultSqlServer')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"parameters": {
+					"DBName": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlDW",
+				"typeProperties": {
+					"connectionString": "[parameters('synapsesourabh-WorkspaceDefaultSqlServer_connectionString')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/synapsesourabh-WorkspaceDefaultStorage')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('synapsesourabh-WorkspaceDefaultStorage_properties_typeProperties_url')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/AutoResolveIntegrationRuntime')]",
+			"type": "Microsoft.Synapse/workspaces/integrationRuntimes",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "Managed",
+				"typeProperties": {
+					"computeProperties": {
+						"location": "AutoResolve",
+						"dataFlowProperties": {
+							"computeType": "General",
+							"coreCount": 8,
+							"timeToLive": 0
+						}
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/WorkspaceSystemIdentity')]",
+			"type": "Microsoft.Synapse/workspaces/credentials",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "ManagedIdentity",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/01_load_balance')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "-- drop PROCEDURE [dbo].[sp_LoadBalance]\nCREATE PROCEDURE [dbo].[sp_LoadBalance]\n    @ContainerName NVARCHAR(100),\n    @ServerName NVARCHAR(100),\n    @Location NVARCHAR(500),\n    @CYDate NVARCHAR(10),\n    @StorageAccountName NVARCHAR(300)\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Create external file format if not exists\n    IF NOT EXISTS (SELECT * FROM sys.external_file_formats WHERE name = 'SynapseDelimitedTextFormat')\n    BEGIN\n        EXEC('CREATE EXTERNAL FILE FORMAT [SynapseDelimitedTextFormat]\n              WITH (FORMAT_TYPE = DELIMITEDTEXT,\n                    FORMAT_OPTIONS (\n                        FIELD_TERMINATOR = '','',\n                        FIRST_ROW = 2,\n                        USE_TYPE_DEFAULT = FALSE\n                    ))');\n    END\n\n    -- Create external data source if not exists\n    IF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = 'creation_' + @ServerName)\n    BEGIN\n        DECLARE @DynamicDataSource NVARCHAR(500) = '\n        CREATE EXTERNAL DATA SOURCE [creation_' + @ServerName + ']\n        WITH (\n            LOCATION = ''' + @Location + '''\n        );';\n        EXEC(@DynamicDataSource);\n    END\n\n    -- Prepare object name variables\n    DECLARE @TableName NVARCHAR(128) = 'Balance_' + @CYDate;\n    DECLARE @QuotedTableName NVARCHAR(258) = QUOTENAME(@TableName);\n\n    -- Drop table if exists\n    IF OBJECT_ID(@QuotedTableName, 'U') IS NOT NULL\n    BEGIN\n        EXEC('DROP TABLE ' + @QuotedTableName);\n    END\n\n    -- Create table\n    DECLARE @CreateTableSQL NVARCHAR(MAX) = '\n    CREATE TABLE ' + @QuotedTableName + ' (\n        [acc_id] NVARCHAR(4000),\n        [product] NVARCHAR(4000),\n        [balance] NVARCHAR(4000),\n        [interest] NVARCHAR(4000)\n    );';\n\n    EXEC(@CreateTableSQL);\n\n    -- Load data into table\n    DECLARE @CopySQL NVARCHAR(MAX) = '\n    COPY INTO ' + @QuotedTableName + '\n    FROM ''https://' + @StorageAccountName + '/' + @ContainerName + '/' + @CYDate + '/''\n    WITH (\n        FILE_TYPE = ''CSV'',\n        MAXERRORS = 0,\n        FIELDTERMINATOR = '','',\n        FIRSTROW = 2\n    );';\n\n    EXEC(@CopySQL);\n\n    -- Return top 100 rows\n    DECLARE @SelectSQL NVARCHAR(MAX) = '\n    SELECT TOP 100 * FROM ' + @QuotedTableName + ';';\n\n    EXEC(@SelectSQL);\nEND;\n\n\n\nEXEC [dbo].[sp_LoadBalance]\n    @ContainerName = 'creations',\n    @ServerName = 'synapsesourabh.dfs.core.windows.net',\n    @Location = 'abfss://creations@synapsesourabh.dfs.core.windows.net',\n    @CYDate = '202412',\n    @StorageAccountName = 'sourabhdatalake.blob.core.windows.net';\n\n\n",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "sourabhdb",
+						"poolName": "sourabhdb"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/02_generate_UPL')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "CREATE PROCEDURE [dbo].[sp_GenerateUPL]\n    @ContainerName NVARCHAR(100),\n    @CYDate NVARCHAR(10),\n    @PYDate NVARCHAR(10)\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    IF OBJECT_ID('[dbo].['+@ContainerName+'_UPL_'+@CYDate+']', 'U') IS NOT NULL\n        DROP TABLE [dbo].['+@ContainerName+'_UPL_'+@CYDate+'];\n\n    SELECT  \n        '31/12/2024' AS [Ref_Date],\n        [acc_id],\n        [product],\n        [var_curr],\n        [balance],\n        [num_client],\n        [interest]\n    INTO [dbo].['+@ContainerName+'_UPL_'+@CYDate+']\n    FROM [dbo].[Balance_'+@CYDate+'];\n\n\n    -- Drop [Creation_UPL_202312] if exists\n    IF OBJECT_ID('[dbo].['+@ContainerName+'_UPL_'+@PYDate+']', 'U') IS NOT NULL\n        DROP TABLE [dbo].['+@ContainerName+'_UPL_'+@PYDate+'];\n\n    -- Create [Creation_UPL_202312]\n    SELECT\n        '31/12/2023' AS [Ref_Date],\n        [acc_id],\n        [product],\n        [balance],\n        [interest]\n    INTO [dbo].['+@ContainerName+'_UPL_'+@PYDate+']\n    FROM [dbo].[Balance_'+@PYDate+'];\n \nEND;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "sourabhdb",
+						"poolName": "sourabhdb"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/03_Merge_datasets')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "CREATE PROCEDURE [dbo].[sp_MergeBalanceDatasets]\n    @CYDate NVARCHAR(10),\n    @PYDate NVARCHAR(10)\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Drop if exists\n    IF OBJECT_ID('[dbo].[Merged_Balance]', 'U') IS NOT NULL\n        DROP TABLE [dbo].[Merged_Balance];\n\n    -- Create merged dataset with source year info\n    SELECT\n        @CYDate AS [Year],\n        [acc_id],\n        [product],\n        [balance],\n        [interest]\n    INTO [dbo].[Merged_Balance]\n    FROM [dbo].[Balance_'+@CYDate+']\n\n    UNION ALL\n\n    SELECT\n        @PYDate AS [Year],\n        [acc_id],\n        [product],\n        [balance],\n        [interest]\n    FROM [dbo].[Balance_'+@PYDate+'];\n\n    PRINT 'Datasets merged successfully.';\nEND;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "sourabhdb",
+						"poolName": "sourabhdb"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/04_stratification')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "CREATE PROCEDURE [dbo].[sp_StratifyByBalance]\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Create stratification table\n    IF OBJECT_ID('[dbo].[Balance_Strata]', 'U') IS NOT NULL\n        DROP TABLE [dbo].[Balance_Strata];\n\n    SELECT\n        [acc_id],\n        [product],\n        [balance],\n        CASE\n            WHEN CAST([balance] AS FLOAT) >= 100000 THEN 'High'\n            WHEN CAST([balance] AS FLOAT) BETWEEN 50000 AND 99999 THEN 'Medium'\n            WHEN CAST([balance] AS FLOAT) BETWEEN 10000 AND 49999 THEN 'Low'\n            ELSE 'Very Low'\n        END AS [Risk_Segment]\n    INTO [dbo].[Balance_Strata]\n    FROM [dbo].[Merged_Balance];\n\n    PRINT 'Balance stratification completed.';\nEND;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "sourabhdb",
+						"poolName": "sourabhdb"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/05_check_anomalies')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "CREATE PROCEDURE [dbo].[sp_CheckForAnomalies]\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Check for negative balances\n    SELECT * FROM [dbo].[Merged_Balance]\n    WHERE CAST([balance] AS FLOAT) < 0;\n\n    -- Check for missing account IDs\n    SELECT * FROM [dbo].[Merged_Balance]\n    WHERE [acc_id] IS NULL OR LTRIM(RTRIM([acc_id])) = '';\n\n\n    PRINT 'Anomaly checks completed.';\nEND;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "sourabhdb",
+						"poolName": "sourabhdb"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/06_calculate_risk')]",
+			"type": "Microsoft.Synapse/workspaces/sqlscripts",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"content": {
+					"query": "CREATE PROCEDURE [dbo].[sp_CalculateRiskScore]\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    -- Add RiskScore column if not exists\n    IF NOT EXISTS (\n        SELECT 1 FROM sys.columns \n        WHERE object_id = OBJECT_ID('[dbo].[Merged_Balance]') \n          AND name = 'RiskScore'\n    )\n    BEGIN\n        ALTER TABLE [dbo].[Merged_Balance]\n        ADD [RiskScore] INT NULL;\n    END\n\n    -- Update RiskScore based on balance and interest\n    UPDATE [dbo].[Merged_Balance]\n    SET [RiskScore] = \n        CASE\n            WHEN CAST([balance] AS FLOAT) >= 100000 THEN 5\n            WHEN CAST([balance] AS FLOAT) BETWEEN 50000 AND 99999 THEN 4\n            WHEN CAST([balance] AS FLOAT) BETWEEN 10000 AND 49999 THEN 3\n            ELSE 1\n        END\n        + \n        CASE\n            WHEN CAST([interest] AS FLOAT) > 0.05 THEN 2\n            ELSE 1\n        END;\n\n    PRINT 'Risk scores calculated.';\nEND;",
+					"metadata": {
+						"language": "sql"
+					},
+					"currentConnection": {
+						"databaseName": "sourabhdb",
+						"poolName": "sourabhdb"
+					},
+					"resultLimit": 5000
+				},
+				"type": "SqlQuery"
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/Notebook 1')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"metadata": {},
+				"cells": []
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/sourabhdb')]",
+			"type": "Microsoft.Synapse/workspaces/sqlPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"collation": "SQL_Latin1_General_CP1_CI_AS",
+				"maxSizeBytes": 263882790666240,
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "southcentralus"
+		}
+	]
+}
